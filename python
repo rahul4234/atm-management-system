@@ -1,0 +1,201 @@
+from datetime import datetime
+def create_db():
+    conn = sqlite3.connect('atm_system.db')
+    cursor = conn.cursor()
+   sample_accounts = [
+        ("1234567890", "5555", 1000.0),
+        ("0987654321", "6666", 500.0)
+    ]
+    
+    for account in sample_accounts:
+        cursor.execute("SELECT * FROM accounts WHERE account_number=?", (account[0],))
+        existing_account = cursor.fetchone()
+        if not existing_account:
+            cursor.execute("INSERT INTO accounts (account_number, pin, balance) VALUES (?, ?, ?)", account)
+    
+    conn.commit()
+    conn.close()
+
+def get_account_from_db(account_number):
+    conn = sqlite3.connect('atm_system.db')
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM accounts WHERE account_number=?", (account_number,))
+    account_data = cursor.fetchone()
+    conn.close()
+    if account_data:
+        return Account(account_data[0], account_data[1], account_data[2])
+    return None
+
+def update_account_balance(account_number, new_balance):
+    conn = sqlite3.connect('atm_system.db')
+    cursor = conn.cursor()
+    cursor.execute("UPDATE accounts SET balance=? WHERE account_number=?", (new_balance, account_number))
+    conn.commit()
+    conn.close()
+
+def update_account_pin(account_number, new_pin):
+    conn = sqlite3.connect('atm_system.db')
+    cursor = conn.cursor()
+    cursor.execute("UPDATE accounts SET pin=? WHERE account_number=?", (new_pin, account_number))
+    conn.commit()
+    conn.close()
+
+def add_transaction_to_db(account_number, transaction_type, amount):
+    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    conn = sqlite3.connect('atm_system.db')
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO transactions (account_number, transaction_type, amount, timestamp) VALUES (?, ?, ?, ?)",
+                   (account_number, transaction_type, amount, timestamp))
+    conn.commit()
+    conn.close()
+
+def get_transaction_history_from_db(account_number):
+    conn = sqlite3.connect('atm_system.db')
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM transactions WHERE account_number=? ORDER BY timestamp DESC", (account_number,))
+    transactions_data = cursor.fetchall()
+    conn.close()
+    return [Transaction(t[2], t[3], t[4]) for t in transactions_data]
+
+def change_account_pin_direct(account_number, new_pin):
+    conn = sqlite3.connect('atm_system.db')
+    cursor = conn.cursor()
+    cursor.execute("UPDATE accounts SET pin=? WHERE account_number=?", (new_pin, account_number))
+    conn.commit()
+    conn.close()
+    print(f"PIN for account {account_number} changed to {new_pin}")
+
+class Account:
+    def __init__(self, account_number, pin, balance):
+        self.account_number = account_number
+        self.pin = pin
+        self.balance = balance
+
+    def validate_pin(self, entered_pin):
+        return self.pin == entered_pin
+
+    def set_balance(self, new_balance):
+        self.balance = new_balance
+
+    def get_balance(self):
+        return self.balance
+
+class Transaction:
+    def __init__(self, transaction_type, amount, timestamp):
+        self.transaction_type = transaction_type
+        self.amount = amount
+        self.timestamp = timestamp
+
+    def __str__(self):
+        return f"{self.timestamp} - {self.transaction_type} - ${self.amount}"
+
+class ATM:
+    def __init__(self):
+        self.current_account = None
+
+    def login(self, account):
+        pin = input("Enter PIN: ")
+        if account.validate_pin(pin):
+            self.current_account = account
+            print("Login successful!")
+            return True
+        else:
+            print("Invalid PIN. Access Denied!")
+            return False
+
+    def check_balance(self):
+        print(f"Current balance: ${self.current_account.get_balance()}")
+
+    def deposit(self):
+        amount = float(input("Enter amount to deposit: $"))
+        if amount > 0:
+            new_balance = self.current_account.get_balance() + amount
+            self.current_account.set_balance(new_balance)
+            add_transaction_to_db(self.current_account.account_number, "Deposit", amount)
+            update_account_balance(self.current_account.account_number, new_balance)
+            print(f"Successfully deposited ${amount}")
+        else:
+            print("Invalid amount.")
+
+    def withdraw(self):
+        amount = float(input("Enter amount to withdraw: $"))
+        if amount <= self.current_account.get_balance() and amount > 0:
+            new_balance = self.current_account.get_balance() - amount
+            self.current_account.set_balance(new_balance)
+            add_transaction_to_db(self.current_account.account_number, "Withdrawal", amount)
+            update_account_balance(self.current_account.account_number, new_balance)
+            print(f"Successfully withdrew ${amount}")
+        else:
+            print("Insufficient funds or invalid amount.")
+
+    def view_transaction_history(self):
+        print("Transaction History:")
+        transactions = get_transaction_history_from_db(self.current_account.account_number)
+        for transaction in transactions:
+            print(transaction)
+
+    def change_pin(self):
+        current_pin = input("Enter your current PIN: ")
+        if self.current_account.validate_pin(current_pin):
+            new_pin = input("Enter new PIN: ")
+            confirm_pin = input("Confirm new PIN: ")
+            if new_pin == confirm_pin:
+                update_account_pin(self.current_account.account_number, new_pin)
+                self.current_account.pin = new_pin
+                print("PIN changed successfully!")
+            else:
+                print("PINs do not match. Try again.")
+        else:
+            print("Incorrect current PIN. Try again.")
+
+    def logout(self):
+        print("Logging out...")
+        self.current_account = None
+
+class ATMSystem:
+    def __init__(self):
+        create_db()
+        self.atm = ATM()
+
+    def run(self):
+        print("Welcome to the ATM System")
+        account_number = input("Enter account number: ")
+
+        account = get_account_from_db(account_number)
+        if not account:
+            print("Account not found!")
+            return
+
+        if self.atm.login(account):
+            self.show_menu()
+
+    def show_menu(self):
+        while True:
+            print("\nATM Menu:")
+            print("1. Check Balance")
+            print("2. Deposit")
+            print("3. Withdraw")
+            print("4. View Transaction History")
+            print("5. Change PIN")
+            print("6. Logout")
+
+            choice = input("Choose an option (1-6): ")
+            if choice == "1":
+                self.atm.check_balance()
+            elif choice == "2":
+                self.atm.deposit()
+            elif choice == "3":
+                self.atm.withdraw()
+            elif choice == "4":
+                self.atm.view_transaction_history()
+            elif choice == "5":
+                self.atm.change_pin()
+            elif choice == "6":
+                self.atm.logout()
+                break
+            else:
+                print("Invalid choice. Please try again.")
+
+if __name__ == "__main__":
+    atm_system = ATMSystem()
+    atm_system.run()
