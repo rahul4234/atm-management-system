@@ -1,0 +1,13 @@
+import sqlite3
+ cursor.execute('''CREATE TABLE IF NOT EXISTS accounts (
+                        account_number TEXT PRIMARY KEY,
+                        pin TEXT,
+                        balance REAL)''')
+    
+    cursor.execute('''CREATE TABLE IF NOT EXISTS transactions (
+                        transaction_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        account_number TEXT,
+                        transaction_type TEXT,
+                        amount REAL,
+                        timestamp TEXT)''')
+    
